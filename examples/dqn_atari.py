@@ -5,6 +5,8 @@ from PIL import Image
 import numpy as np
 import gym
 
+import tensorflow as tf
+
 from keras.models import Sequential
 from keras.layers import Dense, Activation, Flatten, Convolution2D, Permute
 from keras.optimizers import Adam
@@ -16,10 +18,17 @@ from rl.memory import SequentialMemory
 from rl.core import Processor
 from rl.callbacks import FileLogger, ModelIntervalCheckpoint
 
+import model_keras
 
 INPUT_SHAPE = (84, 84)
 WINDOW_LENGTH = 4
 
+
+def setCPUCores( cores ):
+    # Actual device_count seems to have less effect than number of threads
+    config = tf.ConfigProto(intra_op_parallelism_threads=cores, inter_op_parallelism_threads=cores,
+                            allow_soft_placement=True, device_count = {'CPU': cores})
+    set_session(tf.Session(config=config))
 
 class AtariProcessor(Processor):
     def process_observation(self, observation):
@@ -40,10 +49,13 @@ class AtariProcessor(Processor):
     def process_reward(self, reward):
         return np.clip(reward, -1., 1.)
 
+setCPUCores( 4 )
+
 parser = argparse.ArgumentParser()
 parser.add_argument('--mode', choices=['train', 'test'], default='train')
 parser.add_argument('--env-name', type=str, default='BreakoutDeterministic-v4')
 parser.add_argument('--weights', type=str, default=None)
+parser.add_argument('--model', choices=['keras-rl', 'dkfc'], default='keras-rl')
 args = parser.parse_args()
 
 # Get the environment and extract the number of actions.
@@ -52,33 +64,38 @@ np.random.seed(123)
 env.seed(123)
 nb_actions = env.action_space.n
 
-# Next, we build our model. We use the same model that was described by Mnih et al. (2015).
 input_shape = (WINDOW_LENGTH,) + INPUT_SHAPE
-model = Sequential()
-if K.image_dim_ordering() == 'tf':
-    # (width, height, channels)
-    model.add(Permute((2, 3, 1), input_shape=input_shape))
-elif K.image_dim_ordering() == 'th':
-    # (channels, width, height)
-    model.add(Permute((1, 2, 3), input_shape=input_shape))
+if 'dkfc' == args.model:
+    print( "Using DK/FC model" )
+    model = model_keras.make_model_fc( nb_actions, input_shape, dkconv=True, l2_reg=0.0, optimizer=None, dropouts=[0.0,0.0,0.0,0.0,0.0], metrics=['mae'] )
 else:
-    raise RuntimeError('Unknown image_dim_ordering.')
-model.add(Convolution2D(32, 8, 8, subsample=(4, 4)))
-model.add(Activation('relu'))
-model.add(Convolution2D(64, 4, 4, subsample=(2, 2)))
-model.add(Activation('relu'))
-model.add(Convolution2D(64, 3, 3, subsample=(1, 1)))
-model.add(Activation('relu'))
-model.add(Flatten())
-model.add(Dense(512))
-model.add(Activation('relu'))
-model.add(Dense(nb_actions))
-model.add(Activation('linear'))
+# Next, we build our model. We use the same model that was described by Mnih et al. (2015).
+    model = Sequential()
+    if K.image_dim_ordering() == 'tf':
+        # (width, height, channels)
+        model.add(Permute((2, 3, 1), input_shape=input_shape))
+    elif K.image_dim_ordering() == 'th':
+        # (channels, width, height)
+        model.add(Permute((1, 2, 3), input_shape=input_shape))
+    else:
+        raise RuntimeError('Unknown image_dim_ordering.')
+    model.add(Convolution2D(32, 8, 8, subsample=(4, 4)))
+    model.add(Activation('relu'))
+    model.add(Convolution2D(64, 4, 4, subsample=(2, 2)))
+    model.add(Activation('relu'))
+    model.add(Convolution2D(64, 3, 3, subsample=(1, 1)))
+    model.add(Activation('relu'))
+    model.add(Flatten())
+    model.add(Dense(512))
+    model.add(Activation('relu'))
+    model.add(Dense(nb_actions))
+    model.add(Activation('linear'))
+
 print(model.summary())
 
 # Finally, we configure and compile our agent. You can use every built-in Keras optimizer and
 # even the metrics!
-memory = SequentialMemory(limit=1000000, window_length=WINDOW_LENGTH)
+memory = SequentialMemory(limit=500000, window_length=WINDOW_LENGTH)
 processor = AtariProcessor()
 
 # Select a policy. We use eps-greedy action selection, which means that a random action is selected
