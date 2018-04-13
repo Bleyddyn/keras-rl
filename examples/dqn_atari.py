@@ -5,7 +5,9 @@ from PIL import Image
 import numpy as np
 import gym
 
+# These two are for limiting the CPU use via setCPUCores()
 import tensorflow as tf
+from keras.backend.tensorflow_backend import set_session
 
 from keras.models import Sequential
 from keras.layers import Dense, Activation, Flatten, Convolution2D, Permute
@@ -58,6 +60,8 @@ parser.add_argument('--weights', type=str, default=None)
 parser.add_argument('--model', choices=['keras-rl', 'dkfc'], default='keras-rl')
 args = parser.parse_args()
 
+# Try PongNoFrameskip-v4 or Pong-v4 for something easier to train on 
+
 # Get the environment and extract the number of actions.
 env = gym.make(args.env_name)
 np.random.seed(123)
@@ -79,11 +83,11 @@ else:
         model.add(Permute((1, 2, 3), input_shape=input_shape))
     else:
         raise RuntimeError('Unknown image_dim_ordering.')
-    model.add(Convolution2D(32, 8, 8, subsample=(4, 4)))
+    model.add(Convolution2D(32, (8, 8), strides=(4, 4)))
     model.add(Activation('relu'))
-    model.add(Convolution2D(64, 4, 4, subsample=(2, 2)))
+    model.add(Convolution2D(64, (4, 4), strides=(2, 2)))
     model.add(Activation('relu'))
-    model.add(Convolution2D(64, 3, 3, subsample=(1, 1)))
+    model.add(Convolution2D(64, (3, 3), strides=(1, 1)))
     model.add(Activation('relu'))
     model.add(Flatten())
     model.add(Dense(512))

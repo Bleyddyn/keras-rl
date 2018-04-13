@@ -173,7 +173,7 @@ def make_model_fc( num_actions, input_dim, dkconv=False, l2_reg=0.005, optimizer
     else:
         if dropouts[4] > 0.0:
             model.add(Dropout(dropouts[4]))
-        model.add(Dense(256, activation='relu', kernel_regularizer=l2_reg))
+        model.add(Dense(512, activation='relu', kernel_regularizer=l2_reg))
     model.add(Dense(num_actions, activation='linear', kernel_regularizer=l2_reg))
 
     if optimizer is None:
