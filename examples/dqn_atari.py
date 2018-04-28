@@ -54,7 +54,7 @@ class AtariProcessor(Processor):
 setCPUCores( 4 )
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--mode', choices=['train', 'test'], default='train')
+parser.add_argument('--mode', choices=['train', 'test', 'model'], default='train', help='model: print model summary and exit')
 parser.add_argument('--env-name', type=str, default='BreakoutDeterministic-v4')
 parser.add_argument('--weights', type=str, default=None)
 parser.add_argument('--model', choices=['keras-rl', 'dkfc'], default='keras-rl')
@@ -71,7 +71,41 @@ nb_actions = env.action_space.n
 input_shape = (WINDOW_LENGTH,) + INPUT_SHAPE
 if 'dkfc' == args.model:
     print( "Using DK/FC model" )
-    model = model_keras.make_model_fc( nb_actions, input_shape, dkconv=True, l2_reg=0.0, optimizer=None, dropouts=[0.0,0.0,0.0,0.0,0.0], metrics=['mae'] )
+    #model = model_keras.make_model_fc( nb_actions, input_shape, dkconv=True, l2_reg=0.0, optimizer=None, dropouts=[0.0,0.0,0.0,0.0,0.0], metrics=['mae'] )
+
+    l2_reg = None
+    dropouts = [0.0,0.0,0.0,0.0,0.0]
+
+    model = Sequential()
+    if K.image_dim_ordering() == 'tf':
+        # (width, height, channels)
+        model.add(Permute((2, 3, 1), input_shape=input_shape))
+    elif K.image_dim_ordering() == 'th':
+        # (channels, width, height)
+        model.add(Permute((1, 2, 3), input_shape=input_shape))
+    else:
+        raise RuntimeError('Unknown image_dim_ordering.')
+
+    if dropouts[0] > 0.0:
+        model.add(Dropout(dropouts[0]))
+
+    model.add(Convolution2D(32, (5, 5), activation='relu', padding='same', strides=(2,2), kernel_regularizer=l2_reg))
+    model.add(Convolution2D(64, (5, 5), activation='relu', padding='same', strides=(2,2), kernel_regularizer=l2_reg))
+    if dropouts[1] > 0.0:
+        model.add(Dropout(dropouts[1]))
+    model.add(Convolution2D(64, (5, 5), activation='relu', padding='same', strides=(2,2), kernel_regularizer=l2_reg))
+    if dropouts[2] > 0.0:
+        model.add(Dropout(dropouts[2]))
+    model.add(Convolution2D(64, (3, 3), activation='relu', padding='same', strides=(2,2), kernel_regularizer=l2_reg))
+    model.add(Convolution2D(64, (3, 3), activation='relu', padding='same', strides=(1,1), kernel_regularizer=l2_reg))
+    if dropouts[3] > 0.0:
+        model.add(Dropout(dropouts[3]))
+    model.add(Flatten())
+    if dropouts[4] > 0.0:
+        model.add(Dropout(dropouts[4]))
+    model.add(Dense(512, activation='relu', kernel_regularizer=l2_reg))
+    model.add(Dense(nb_actions, activation='linear', kernel_regularizer=l2_reg))
+
 else:
 # Next, we build our model. We use the same model that was described by Mnih et al. (2015).
     model = Sequential()
@@ -96,6 +130,8 @@ else:
     model.add(Activation('linear'))
 
 print(model.summary())
+if "model" == args.mode:
+    exit()
 
 # Finally, we configure and compile our agent. You can use every built-in Keras optimizer and
 # even the metrics!
